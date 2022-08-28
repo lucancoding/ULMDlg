@@ -2,13 +2,8 @@
 // ULMDlgDlg.cpp: 实现文件
 //
 
-#include "pch.h"
-#include "framework.h"
-#include "ULMDlg.h"
 #include "ULMDlgDlg.h"
-#include "afxdialogex.h"
-#include "ULM7606.h"
-#include "Resource.h"
+
 //#include "matplotlibcpp.h"
 //namespace plt = matplotlibcpp;
 
@@ -68,14 +63,16 @@ CULMDlgDlg::CULMDlgDlg(CWnd* pParent /*=nullptr*/)
 	: CDialogEx(IDD_ULMDLG_DIALOG, pParent)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
-	oppo = 0;
-	adccycle = 0;
-	realTotalnums = 0;
 }
 
 void CULMDlgDlg::DoDataExchange(CDataExchange* pDX)
 {
 	CDialogEx::DoDataExchange(pDX);
+	DDX_Control(pDX, IDC_Com, m_Combo_Com);
+	DDX_Control(pDX, IDC_Baud, m_Combo_Baud);
+	DDX_Control(pDX, IDC_Check, m_Combo_Check);
+	DDX_Control(pDX, IDC_Data, m_Combo_Data);
+	DDX_Control(pDX, IDC_Stop, m_Combo_Stop);
 }
 
 BEGIN_MESSAGE_MAP(CULMDlgDlg, CDialogEx)
@@ -85,6 +82,14 @@ BEGIN_MESSAGE_MAP(CULMDlgDlg, CDialogEx)
 	ON_BN_CLICKED(ID_START, &CULMDlgDlg::OnBnClickedCollect)
 	ON_WM_TIMER()
 	ON_BN_CLICKED(ID_Con, &CULMDlgDlg::OnBnClickedCon)
+	ON_BN_CLICKED(IDC_Output, &CULMDlgDlg::OnBnClickedOutput)
+	ON_BN_CLICKED(IDC_BUTTON_OPENCOM, &CULMDlgDlg::OnBnClickedButtonOpencom)
+	ON_CBN_SELCHANGE(IDC_Com, &CULMDlgDlg::OnCbnSelchangeComboCom)
+	ON_CBN_SELCHANGE(IDC_Baud, &CULMDlgDlg::OnCbnSelchangeComboBaud)
+	ON_CBN_SELCHANGE(IDC_Check, &CULMDlgDlg::OnCbnSelchangeComboCheck)
+	ON_CBN_SELCHANGE(IDC_Data, &CULMDlgDlg::OnCbnSelchangeComboData)
+	ON_CBN_SELCHANGE(IDC_Stop, &CULMDlgDlg::OnCbnSelchangeComboStop)
+	ON_MESSAGE(WM_COMM_RXCHAR, OnCommunication)//串口接收处理函数
 END_MESSAGE_MAP()
 
 
@@ -120,6 +125,52 @@ BOOL CULMDlgDlg::OnInitDialog()
 	SetIcon(m_hIcon, FALSE);		// 设置小图标
 
 	// TODO: 在此添加额外的初始化代码
+	adc.byADCOptions = 0x00;
+	adc.byTrigOptions = 0x00;
+	adc.dwCycles = 0x00;
+	adc.wPeriod = 0;	//这个数要设置成有效采样周期(10uS ~ 5000uS )
+	adc.wReserved = 0x00;
+	initDataBase();//初始化数据库
+
+	GetLocalTime(&stst);
+	wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 数据库初始化成功！\r\n"),
+		stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
+	((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+	((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+
+	//---------------------------------------------------------
+	//设串口组合列表框
+	TCHAR com[][6] = { L"COM1",L"COM2",L"COM3",L"COM4",L"COM5",L"COM6",L"COM7",L"COM8",L"COM9" };
+	for (int i = 0; i < 9; i++)
+		m_Combo_Com.AddString(com[i]);
+	m_Combo_Com.SetCurSel(0);
+
+	//设波特率组合列表框
+	TCHAR baud[][7] = { L"300",L"600",L"1200",L"2400",L"4800",L"9600",L"19200",L"38400",L"43000",L"56000",L"57600",L"115200",L"128000",L"230400" };
+	for (int i = 0; i < 14; i++)
+		m_Combo_Baud.AddString(baud[i]);
+	m_Combo_Baud.SetCurSel(5);
+
+	//设校验位组合列表框
+	TCHAR check[][7] = { L"None",L"Odd",L"Even" };
+	for (int i = 0; i < 3; i++)
+		m_Combo_Check.AddString(check[i]);
+	m_Combo_Check.SetCurSel(0);
+
+	//设数据位组合列表框
+	TCHAR data[][2] = { L"8",L"7",L"6" };
+	for (int i = 0; i < 3; i++)
+		m_Combo_Data.AddString(data[i]);
+	m_Combo_Data.SetCurSel(0);
+
+	//设停止位组合列表框
+	TCHAR stop[][2] = { L"1",L"2" };
+	for (int i = 0; i < 2; i++)
+		m_Combo_Stop.AddString(stop[i]);
+	m_Combo_Stop.SetCurSel(0);
+
+	//打开串口函数赋初值
+	OpenComm(0);
 
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
@@ -179,10 +230,8 @@ HCURSOR CULMDlgDlg::OnQueryDragIcon()
 /// </summary>
 void CULMDlgDlg::OnBnClickedCollect()
 {
-	TCHAR keep[200];
-	SYSTEMTIME stst;
-	realTotalnums = 0;
 	if (!oppo) {
+		initDataBase();//每一次开始收集，都初始化数据库
 		//4.FIFO操作
 		GetLocalTime(&stst);
 		if (ULM7606_InitFIFO(0)) {//FIFO初始化成功 
@@ -243,13 +292,11 @@ void CULMDlgDlg::OnTimer(UINT_PTR nIDEvent)
 {
 	// TODO: 在此添加消息处理程序代码和/或调用默认值
 	//循环读取FIFO的数据，关键！ 
-	SYSTEMTIME stst;                                      //时间戳 
 	DWORD suky, robi, monkey, numan, apple, ii, jj, juda; //suky保存FIFO未读数据长度 
 														  //robi本次实际读取的数据个数 
 														  //monkey需要新增的 “块”数 
-	TCHAR keep[200];
 	CString strstr;//暂无引用
-	
+
 	//字符ptr->内码short->所有变量ptzhang->切量程ptzhang2
 	BYTE* ptr;//存一个Timer内读到的全部字符数据
 	WORD* ptzhang, * ptchen, * silva;//short短整形 存没切量程的数值
@@ -287,44 +334,49 @@ void CULMDlgDlg::OnTimer(UINT_PTR nIDEvent)
 	//另一个判断是 如果读到数据个数不为0，那就保存拼接一下
 
 	if (ptr) {//往内存中存储一下这个timer内的数据
-		float vlta;
-		float* kk = (float*)malloc(robi * sizeof(float) / 2);
-		int a = robi/ 2;
-		ii = 0;
-		for (int i = 0; i < robi; i = i + 2, ii++) {
-			vivo = ptr[i+1] << 8 | ptr[i];
-			vlta = vivo * 5.0 / 32767;
-			kk[ii] = vlta;
+		BYTE** newptr1 = (BYTE**)realloc(totalData, sizeof(BYTE*) * (memBlockLen + 1));
+		DWORD* newptr2 = (DWORD*)realloc(blockSizes, sizeof(DWORD) * (memBlockLen + 1));
+		if (!newptr1 || !newptr2) {
+			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 申请内存块失败！\r\n"),
+				stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
+			((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+			((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+			return;
 		}
-		ku2[0] = kk;
+		memBlockLen += 1;
 
-		wsprintf(keep, TEXT("共读取%d组数据 \r\n"), realTotalnums/16);
-		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+		totalData = newptr1;
+		blockSizes = newptr2;
+		totalData[memBlockLen - 1] = ptr;
+		blockSizes[memBlockLen - 1] = robi;
+
+		realTotalBytes += robi;//加上此次采到的长度
+		wsprintf(keep, TEXT("共读取%d组数据 \r\n"), realTotalBytes / 16);
 		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
-		//oppo = 0;
+		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
 	}
-	free(ptr);
 
-	if ((realTotalnums += robi) == adccycle * 16) {
+	if (realTotalBytes == adc.dwCycles * 16) {
 		this->KillTimer(1);
 		((CButton*)GetDlgItem(ID_START))->SetWindowText(TEXT("开始采集数据"));
 		wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] Timer停止，读取成功！\r\n"),
 			stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
-		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
 		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
 	}
 
-	ending:
+ending:
 	CDialogEx::OnTimer(nIDEvent);
 }
 
-
+/// <summary>
+/// 配置ADC
+/// </summary>
 void CULMDlgDlg::OnBnClickedCon()
 {
 	// TODO: 在此添加控件通知处理程序代码
 	//1.扫抽USB.总线上的设备
 	WORD rr[16];
-	ADC_CONFIG adc;
 	int num = USBScanDev(1);
 	wsprintf(keep, TEXT("device num = %d\r\n"), num);
 	((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
@@ -341,14 +393,343 @@ void CULMDlgDlg::OnBnClickedCon()
 	//3.配置ADC
 	adc.byADCOptions = 0x00;
 	adc.byTrigOptions = 0x00;
-	adc.dwCycles = 0x1e8480;
+	adc.dwCycles = 6000000;
 	adc.wPeriod = 10;	//这个数要设置成有效采样周期(10uS ~ 5000uS )
 	adc.wReserved = 0x00;
-	adccycle = adc.dwCycles;
 	if (ULM7606_ADCSetConfig(0, &adc))
 		wsprintf(keep, TEXT("ADC配置成功！\r\n"));
 	else
 		wsprintf(keep, TEXT("ADC配置失败！\r\n"));
 	((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
 	((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+}
+
+/// <summary>
+/// 初始化数据库
+/// </summary>
+/// <returns>True为成功</returns>
+bool CULMDlgDlg::initDataBase() {
+	try {
+		oppo = 0;//没有读数据的状态
+		for (int i = 0; i < memBlockLen; i++) {
+			free(totalData[i]);
+			totalData[i] = nullptr;
+		}
+		free(totalData);//释放完内存
+		totalData = nullptr;
+		realTotalBytes = 0;//目前库内的数据标记清空
+		memBlockLen = 0;
+		blockSizes = 0;
+		return true;
+	}
+	catch (const LPCTSTR msg) {
+		MessageBox(msg);
+	}
+	return false;
+}
+
+/// <summary>
+/// 输出到文件
+/// </summary>
+/// <returns>True为成功</returns>
+bool CULMDlgDlg::outputToFile() {
+	GetLocalTime(&stst);
+	char buffer[200] = { 0 };
+	snprintf(buffer, 200, "./%02d-%02d-%02d.txt", stst.wHour, stst.wMinute, stst.wSecond);
+	FILE* f;
+	fopen_s(&f, buffer, "w+");
+	if (f == NULL) {
+		wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 数据保存文件打开失败！\r\n"),
+			stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
+		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+	}
+	short vivo;
+	for (auto i = 0; i < memBlockLen; i++) {
+		BYTE* ptr = totalData[i];
+		DWORD len = blockSizes[i];
+		float* temp;
+		for (DWORD j = 0; j < len; j += 16) {
+			temp = (float*)malloc(8 * sizeof(float));
+			if (!temp) {
+				wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 申请内存空间失败！\r\n"),
+					stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
+				((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+				((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+			}
+			int ii = 0;
+			for (int k = 0; k < 16; k += 2, ii++) {
+				vivo = ptr[j + k + 1] << 8 | ptr[j + k];
+				temp[ii] = vivo * 5.0 / 32767;
+			}
+			memset(buffer, 0, 200);
+			snprintf(buffer, 200, " %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f\r\n", temp[0] \
+				, temp[1], temp[2], temp[3], temp[4], temp[5], temp[6], temp[7]);
+			fputs(buffer, f);
+			free(temp);
+		}
+		fflush(f);
+	}
+	fclose(f);
+	wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 文件已输出到%02d-%02d-%02d.txt\r\n"),
+		stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond, stst.wHour, stst.wMinute, stst.wSecond);
+	((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+	((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+	return true;
+}
+
+void CULMDlgDlg::OnBnClickedOutput()
+{
+	// TODO: 在此添加控件通知处理程序代码
+	outputToFile();
+}
+
+BOOL CULMDlgDlg::OpenComm(int Num)
+{
+	m_Combo_Com.GetLBText(Num, m_Str_Com);
+	//获取串口Combo下拉框中对应于Num位置的串口名称，比如Num=0时，m_SeriouStr 为"COM1"
+
+	m_hCom = CreateFile(m_Str_Com, GENERIC_READ | GENERIC_WRITE, 0, NULL,
+		OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, NULL);
+	//将串口作为一个文件来看，用CreateFile()函数打开串口，返回结果存储在m_hCom中
+
+	if (m_hCom == INVALID_HANDLE_VALUE)//如果返回INVALID_HANDLE_VALUE表示打开串口失败，
+	{
+		AfxMessageBox(L"打开串口失败!");	//失败时弹出对话框提醒
+		m_bConnected = 0;				//将串口连接标志设为0
+		return FALSE;					//打开失败后不再继续往下进行，直接返回FALSE
+	}
+
+	m_bConnected = 1;
+	return 0;
+}
+//============================================显示串口状态============================================
+
+//显示串口状态
+void CULMDlgDlg::DisplayStatus()
+{
+	CWnd* static_status = GetDlgItem(IDC_STATIC_COMSTATU);
+	CWnd* static_txlen = GetDlgItem(IDC_STATIC_TXLEN);
+	CWnd* static_rxlen = GetDlgItem(IDC_STATIC_RXLEN);
+	CString status_str, txlen_str, rxlen_str;
+
+	if (m_bConnected)
+	{
+		status_str = L"STATUS:" + m_Str_Com + " OPENED," + m_Str_Baud + ',' + m_Str_Check + ',' + m_Str_Data + ',' + m_Str_Stop;
+		SetCommParameter();
+	}
+
+	else
+		status_str = L"STATUS:" + m_Str_Com + " CLOSED," + m_Str_Baud + ',' + m_Str_Check + ',' + m_Str_Data + ',' + m_Str_Stop;
+	static_status->SetWindowText(status_str);
+
+	txlen_str.Format(L"TX:%ld", m_txlen);
+	static_txlen->SetWindowText(txlen_str);
+
+	rxlen_str.Format(L"RX:%ld", m_rxlen);
+	static_rxlen->SetWindowText(rxlen_str);
+}
+
+//==============================================关闭串口==============================================
+
+//关闭串口
+void CULMDlgDlg::CloseConnection()
+{
+	if (!m_bConnected)
+		return;
+	m_bConnected = FALSE;
+	SetCommMask(m_hCom, 0);
+	CloseHandle(m_hCom);
+}
+
+//==============================================设置串口参数==============================================
+
+//设置串口参数
+BOOL CULMDlgDlg::SetCommParameter()
+{
+	DCB dcb;
+	if (!GetCommState(m_hCom, &dcb))
+		return FALSE;
+
+	//设置波特率
+	long baudrate[] = { 300,600,1200,2400,4800,9600,19200,38400,43000,56000,57600,115200,128000,230400 };
+	int baudindex = m_Combo_Baud.GetCurSel();
+	m_Combo_Baud.GetLBText(baudindex, m_Str_Baud);
+	dcb.BaudRate = baudrate[baudindex];
+	//设置数据位
+	int databit[] = { 8,7,6 };
+	int dataindex = m_Combo_Data.GetCurSel();
+	m_Combo_Data.GetLBText(dataindex, m_Str_Data);
+	dcb.ByteSize = databit[dataindex];
+	//设置校验位
+	int checkindex = m_Combo_Check.GetCurSel();
+	m_Combo_Check.GetLBText(checkindex, m_Str_Check);
+	switch (checkindex)
+	{
+	case 0: dcb.Parity = NOPARITY; break;
+	case 1: dcb.Parity = ODDPARITY; break;
+	case 2: dcb.Parity = EVENPARITY; break;
+	default:;
+	}
+	//设置停止位
+	int stopindex = m_Combo_Stop.GetCurSel();
+	m_Combo_Stop.GetLBText(stopindex, m_Str_Stop);
+	switch (stopindex)
+	{
+	case 0: dcb.StopBits = ONESTOPBIT; break;
+	case 1: dcb.StopBits = TWOSTOPBITS; break;
+	default:;
+	}
+	//流控制 
+	dcb.fInX = FALSE;
+	dcb.fOutX = FALSE;
+	dcb.fNull = FALSE;
+	dcb.fBinary = TRUE;
+	dcb.fParity = FALSE;
+	dcb.fOutxCtsFlow = FALSE;
+	dcb.fOutxDsrFlow = FALSE;
+
+	return(SetCommState(m_hCom, &dcb));
+}
+
+
+//==========================================串口开关按钮状态显示==========================================
+
+//串口状态显示
+void CULMDlgDlg::OnBnClickedButtonOpencom()
+{
+	//TODO: 在此添加控件通知处理程序代码
+
+	m_Combo_Com.GetLBText(m_Combo_Com.GetCurSel(), m_Str_Com); //获取串口号
+	m_Combo_Baud.GetLBText(m_Combo_Baud.GetCurSel(), m_Str_Baud);    //获取波特率
+	m_Combo_Check.GetLBText(m_Combo_Check.GetCurSel(), m_Str_Check);//获取校验位
+	m_Combo_Data.GetLBText(m_Combo_Data.GetCurSel(), m_Str_Data); //获取数据位
+	m_Combo_Stop.GetLBText(m_Combo_Stop.GetCurSel(), m_Str_Stop); //获取停止位
+	if (m_COMStatu)//串口已经打开
+	{
+		//关闭串口
+		m_Com.ClosePort();
+		m_COMStatu = FALSE;
+		GetDlgItem(IDC_BUTTON_OPENCOM)->SetWindowText(L"打开串口");//说明已经关闭了串口
+
+		//修改状态
+		GetDlgItem(IDC_Com)->EnableWindow(TRUE);  //允许改
+		GetDlgItem(IDC_Baud)->EnableWindow(TRUE);  //允许改
+		GetDlgItem(IDC_Check)->EnableWindow(TRUE);//允许改
+		GetDlgItem(IDC_Data)->EnableWindow(TRUE);  //允许改
+		GetDlgItem(IDC_Stop)->EnableWindow(TRUE);  //允许改
+
+	}
+	else//串口已经关闭
+	{
+		//if (m_Com.InitPort(this, m_PortName, 9600 ,'N',8, 0))
+		if (m_Com.InitPort(this, 7, 9600, 'N', 8, 1))
+		{                           //串口号，波特率，校验位，数据位，停止位为1(在此输入0，代表停止位为1)
+			//打开串口成功
+			m_Com.StartMonitoring();
+			m_COMStatu = TRUE;
+			GetDlgItem(IDC_BUTTON_OPENCOM)->SetWindowText(L"关闭串口");//说明已经打开了串口
+
+
+			//修改状态          
+			GetDlgItem(IDC_Com)->EnableWindow(FALSE);  //不许改
+			GetDlgItem(IDC_Baud)->EnableWindow(FALSE);  //不许改
+			GetDlgItem(IDC_Check)->EnableWindow(FALSE);//不许改
+			GetDlgItem(IDC_Data)->EnableWindow(FALSE);  //不许改
+			GetDlgItem(IDC_Stop)->EnableWindow(FALSE);  //不许改
+
+		}
+		else
+		{//串口打开失败           
+			MessageBox(L"没有发现此串口或被占用", L"串口打开失败", MB_ICONWARNING);
+		}
+	}
+
+}
+
+//==============================================更改串口设置==============================================
+
+//更改串口
+void CULMDlgDlg::OnCbnSelchangeComboCom()
+{
+	// TODO: 在此添加控件通知处理程序代码
+	if (m_bConnected)
+		CloseConnection();
+	if (m_COMStatu)
+	{
+		int i = m_Combo_Com.GetCurSel();
+		OpenComm(i);
+	}
+	DisplayStatus();
+}
+
+//更改波特率
+void CULMDlgDlg::OnCbnSelchangeComboBaud()
+{
+	// TODO: 在此添加控件通知处理程序代码
+	int baudindex;
+	baudindex = m_Combo_Baud.GetCurSel();
+	if (baudindex != CB_ERR)
+	{
+		SetCommParameter();
+		m_Combo_Baud.GetLBText(baudindex, m_Str_Baud);
+
+	}
+	DisplayStatus();
+}
+
+//更改校验位
+void CULMDlgDlg::OnCbnSelchangeComboCheck()
+{
+	// TODO: 在此添加控件通知处理程序代码
+	int checkindex;
+	checkindex = m_Combo_Check.GetCurSel();
+	if (checkindex != CB_ERR)
+	{
+		SetCommParameter();
+		m_Combo_Check.GetLBText(checkindex, m_Str_Check);
+		DisplayStatus();
+	}
+}
+
+//更改数据位
+void CULMDlgDlg::OnCbnSelchangeComboData()
+{
+	// TODO: 在此添加控件通知处理程序代码
+
+	int dataindex;
+	dataindex = m_Combo_Data.GetCurSel();
+	if (dataindex != CB_ERR)
+	{
+		SetCommParameter();
+		m_Combo_Data.GetLBText(dataindex, m_Str_Data);
+		DisplayStatus();
+	}
+}
+
+//更改停止位
+void CULMDlgDlg::OnCbnSelchangeComboStop()
+{
+	// TODO: 在此添加控件通知处理程序代码
+	int stopindex;
+	stopindex = m_Combo_Stop.GetCurSel();
+	if (stopindex != CB_ERR)
+	{
+		SetCommParameter();
+		m_Combo_Stop.GetLBText(stopindex, m_Str_Stop);
+		DisplayStatus();
+	}
+}
+
+LRESULT CULMDlgDlg::OnCommunication(WPARAM ch, LPARAM port)
+{//串口接收  处理函数
+	//Uart_Has_RecOneByte = TRUE;
+	//uart_time_count = 0;
+	//ringq_push(&ringq_rbuff, (BYTE)wParam);
+	BYTE a = (BYTE)ch;
+	wsprintf(keep, TEXT("%c"),a);
+	((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+	((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+
+	return 0;
 }

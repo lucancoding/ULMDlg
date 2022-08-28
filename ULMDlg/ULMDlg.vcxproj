@@ -94,7 +94,9 @@
       <PreprocessorDefinitions>_WINDOWS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <AdditionalIncludeDirectories>D:\codeTools\matplotlib-cpp;D:\install_files\Anaconda3\Lib\site-packages\numpy\core\include;D:\install_files\Anaconda3\include;C:\Users\Admin\Desktop\ULM7606数据采集卡软件包20220705\编程库（64-Bit）;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>Default</LanguageStandard>
+      <ConformanceMode>false</ConformanceMode>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -190,6 +192,7 @@
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Resource.h" />
+    <ClInclude Include="SerialCom.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="ULMDlg.h" />
     <ClInclude Include="ULMDlgDlg.h" />
@@ -201,6 +204,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="SerialCom.cpp" />
     <ClCompile Include="ULMDlg.cpp" />
     <ClCompile Include="ULMDlgDlg.cpp" />
   </ItemGroup>
