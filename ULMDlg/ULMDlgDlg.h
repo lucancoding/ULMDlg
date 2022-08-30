@@ -10,9 +10,16 @@
 #include "framework.h"
 #include "ULMDlg.h"
 #include "Resource.h"
+#include <string>
 #include "SerialCom.h"
+using namespace std;
 
 #define MAXmemSize 10000
+struct GPSTime {
+	short hh;
+	short mm;
+	float ss;
+};
 // CULMDlgDlg 对话框
 class CULMDlgDlg : public CDialogEx
 {
@@ -76,6 +83,9 @@ private:
 	long memBlockLen;//存现有多少个数据块
 	DWORD* blockSizes;//存每个内存块中的数据长度
 	ADC_CONFIG adc;//ADC配置
+	char GPSTimeStr[100];//GPStime对应的一整行
+	short gtStrIndex;//gpstime字符串长度
+	GPSTime gt;//gps时间
 
 	SYSTEMTIME stst;                                      //时间戳 
 // 实现
@@ -98,4 +108,5 @@ public:
 	CComboBox m_Combo_Check;
 	CComboBox m_Combo_Data;
 	CComboBox m_Combo_Stop;
+	CComboBox m_Combo_TriggerTime;
 };
