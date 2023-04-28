@@ -42,6 +42,7 @@ public:
 	BOOL			m_COMStatu;				//串口状态指示
 	long			m_rxlen;				//接收数据个数
 	long			m_txlen;				//发送数据个数
+	File* gpsfile;
 	
 	//字符变量
 	CString		m_Str_Com;					//字符变量：串口
@@ -77,6 +78,7 @@ private:
 	bool initDataBase();
 	bool outputToFile();
 	int oppo;
+	bool ADCsetOk;
 	TCHAR keep[200];
 	int adccycle, realTotalBytes;
 	BYTE** totalData;//存所有数据块的地址
@@ -85,7 +87,8 @@ private:
 	ADC_CONFIG adc;//ADC配置
 	char GPSTimeStr[100];//GPStime对应的一整行
 	short gtStrIndex;//gpstime字符串长度
-	GPSTime gt;//gps时间
+	GPSTime gt;//实时gps时间
+	GPSTime cur_gt;//本轮数据开始采集的时间
 
 	SYSTEMTIME stst;                                      //时间戳 
 // 实现
@@ -108,5 +111,6 @@ public:
 	CComboBox m_Combo_Check;
 	CComboBox m_Combo_Data;
 	CComboBox m_Combo_Stop;
-	CComboBox m_Combo_TriggerTime;
+	//CComboBox m_Combo_TriggerTime;
+	CComboBox m_Combo_Range;
 };

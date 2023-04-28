@@ -73,7 +73,7 @@ void CULMDlgDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_Check, m_Combo_Check);
 	DDX_Control(pDX, IDC_Data, m_Combo_Data);
 	DDX_Control(pDX, IDC_Stop, m_Combo_Stop);
-	DDX_Control(pDX, IDC_TriggerTime, m_Combo_TriggerTime);
+	DDX_Control(pDX, IDC_Range, m_Combo_Range);
 }
 
 BEGIN_MESSAGE_MAP(CULMDlgDlg, CDialogEx)
@@ -150,7 +150,7 @@ BOOL CULMDlgDlg::OnInitDialog()
 	TCHAR baud[][7] = { L"300",L"600",L"1200",L"2400",L"4800",L"9600",L"19200",L"38400",L"43000",L"56000",L"57600",L"115200",L"128000",L"230400" };
 	for (int i = 0; i < 14; i++)
 		m_Combo_Baud.AddString(baud[i]);
-	m_Combo_Baud.SetCurSel(5);
+	m_Combo_Baud.SetCurSel(11);
 
 	//设校验位组合列表框
 	TCHAR check[][7] = { L"None",L"Odd",L"Even" };
@@ -170,15 +170,23 @@ BOOL CULMDlgDlg::OnInitDialog()
 		m_Combo_Stop.AddString(stop[i]);
 	m_Combo_Stop.SetCurSel(0);
 
-	//设触发时刻列表框
-	TCHAR trigger[][10] = { L"0",L"1",L"2" ,L"3" ,L"4" ,L"5" ,L"6" ,L"7" ,L"8" ,L"9" };
-	for (int i = 0; i < 10; i++)
-		m_Combo_TriggerTime.AddString(trigger[i]);
-	m_Combo_TriggerTime.SetCurSel(0);
+	////设触发时刻列表框
+	//TCHAR trigger[][10] = { L"0",L"1",L"2" ,L"3" ,L"4" ,L"5" ,L"6" ,L"7" ,L"8" ,L"9" };
+	//for (int i = 0; i < 10; i++)
+	//	m_Combo_TriggerTime.AddString(trigger[i]);
+	//m_Combo_TriggerTime.SetCurSel(0);
+
+	//设量程
+	TCHAR range[][5] = { L"5",L"10" };
+	for (int i = 0; i < 2; i++)
+		m_Combo_Range.AddString(range[i]);
+	m_Combo_Range.SetCurSel(0);
 
 	GetDlgItem(IDC_TimeInterval)->SetWindowText(L"10");//设置时间间隔
 	GetDlgItem(IDC_Cycle)->SetWindowText(L"1000");//设置采样数
-	GetDlgItem(IDC_wPeriod)->SetWindowText(L"6");//设置采样间隔us
+	GetDlgItem(IDC_wPeriod)->SetWindowText(L"10");//设置采样间隔us
+	GetDlgItem(IDC_TriggerTime)->SetWindowText(L"0");//设置求余后的触发时间
+	ADCsetOk = false;
 	//打开串口函数赋初值
 	OpenComm(0);
 
@@ -240,15 +248,20 @@ HCURSOR CULMDlgDlg::OnQueryDragIcon()
 /// </summary>
 void CULMDlgDlg::OnBnClickedCollect()
 {
+	if (!ADCsetOk) {
+		GetLocalTime(&stst);
+		wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 采集失败：原因-ADC配置未成功！\r\n"),
+			stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
+		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+		return;
+	}
 	if (!oppo) {
 		initDataBase();//每一次开始收集，都初始化数据库
 		//4.FIFO操作
 		GetLocalTime(&stst);
 		if (ULM7606_InitFIFO(0)) {//FIFO初始化成功 
-			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] FIFO初始化成功！\r\n"),
-				stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
-			((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
-			((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+
 		}
 		else
 		{//FIFO初始化失败 
@@ -274,6 +287,7 @@ void CULMDlgDlg::OnBnClickedCollect()
 				stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
 			((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
 			((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+			return;
 		}
 	}
 	else {//已经开始采样，停止采样！ 
@@ -373,6 +387,7 @@ void CULMDlgDlg::OnTimer(UINT_PTR nIDEvent)
 			stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
 		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
 		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+		oppo = 0;//归0
 		outputToFile();
 	}
 
@@ -386,6 +401,7 @@ ending:
 void CULMDlgDlg::OnBnClickedCon()
 {
 	// TODO: 在此添加控件通知处理程序代码
+	ADCsetOk = false;
 	//1.扫抽USB.总线上的设备
 	WORD rr[16];
 	int num = USBScanDev(1);
@@ -396,8 +412,10 @@ void CULMDlgDlg::OnBnClickedCon()
 	//2.打开设备
 	if (USBOpenDev(0) != SEVERITY_ERROR)
 		wsprintf(keep, TEXT("设备已开启！\r\n"));
-	else
+	else {
 		wsprintf(keep, TEXT("设备开启失败！\r\n"));
+		return;
+	}
 	((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
 	((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
 
@@ -405,21 +423,37 @@ void CULMDlgDlg::OnBnClickedCon()
 	CString cyc;
 	GetDlgItem(IDC_Cycle)->GetWindowText(cyc);
 	unsigned long _trigger = _ttol(cyc);
-	adc.byADCOptions = 0x00;
+	int rid = m_Combo_Range.GetCurSel();
+	CString setrange;
+	m_Combo_Range.GetLBText(rid, setrange);
+	if (setrange == L"5") adc.byADCOptions = 0x00;
+	else if (setrange == L"10") adc.byADCOptions = 0b00001000;
+	else {
+		wsprintf(keep, TEXT("配置量程异常！\r\n"));
+		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+		return;
+	}
+	//adc.byADCOptions = 0x00;
 	adc.byTrigOptions = 0x00;
 	adc.dwCycles = _trigger;
 
 	GetDlgItem(IDC_wPeriod)->GetWindowText(cyc);
 	unsigned int per = _ttoi(cyc);
 
+
 	adc.wPeriod = per;	//这个数要设置成有效采样周期(10uS ~ 5000uS )
 	adc.wReserved = 0x00;
 	if (ULM7606_ADCSetConfig(0, &adc))
 		wsprintf(keep, TEXT("ADC配置成功！\r\n"));
-	else
+	else {
 		wsprintf(keep, TEXT("ADC配置失败！\r\n"));
+		return;
+	}
+		
 	((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
 	((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+	ADCsetOk = true;
 }
 
 /// <summary>
@@ -457,7 +491,7 @@ bool CULMDlgDlg::outputToFile() {
 	((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
 	((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
 	char buffer[200] = { 0 };
-	snprintf(buffer, 200, "./%02d-%02d-%02d.txt", stst.wHour, stst.wMinute, stst.wSecond);
+	snprintf(buffer, 200, "./%02d-%02d.txt", cur_gt.hh, cur_gt.mm);
 	FILE* f;
 	fopen_s(&f, buffer, "w+");
 	if (f == NULL) {
@@ -465,6 +499,7 @@ bool CULMDlgDlg::outputToFile() {
 			stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
 		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
 		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+		return false;
 	}
 	short vivo;
 	for (auto i = 0; i < memBlockLen; i++) {
@@ -478,11 +513,16 @@ bool CULMDlgDlg::outputToFile() {
 					stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
 				((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
 				((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+				return false;
 			}
 			int ii = 0;
+			CString cs0;
+			int cn = m_Combo_Range.GetCurSel();
+			m_Combo_Range.GetLBText(cn, cs0);
+			float lc = _ttof(cs0);
 			for (int k = 0; k < 16; k += 2, ii++) {
 				vivo = ptr[j + k + 1] << 8 | ptr[j + k];
-				temp[ii] = vivo * 5.0 / 32767;
+				temp[ii] = vivo * lc / 32767;
 			}
 			memset(buffer, 0, 200);
 			snprintf(buffer, 200, " %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f\r\n", temp[0] \
@@ -627,6 +667,7 @@ void CULMDlgDlg::OnBnClickedButtonOpencom()
 	m_Combo_Check.GetLBText(m_Combo_Check.GetCurSel(), m_Str_Check);//获取校验位
 	m_Combo_Data.GetLBText(m_Combo_Data.GetCurSel(), m_Str_Data); //获取数据位
 	m_Combo_Stop.GetLBText(m_Combo_Stop.GetCurSel(), m_Str_Stop); //获取停止位
+	GetLocalTime(&stst);
 	if (m_COMStatu)//串口已经打开
 	{
 		//关闭串口
@@ -646,13 +687,22 @@ void CULMDlgDlg::OnBnClickedButtonOpencom()
 	{
 		//if (m_Com.InitPort(this, m_PortName, 9600 ,'N',8, 0))
 		CString cs;
-		m_Combo_Com.GetWindowText(cs);
-		short comnum = _ttoi(cs.Right(1));
-		if (m_Com.InitPort(this, comnum, 9600, 'N', 8, 1))
+		m_Combo_Com.GetWindowText(cs);		short comnum = _ttoi(cs.Right(1));
+
+		m_Combo_Baud.GetWindowText(cs);		int baud = _ttoi(cs);
+
+		m_Combo_Check.GetWindowText(cs);		char check = cs[0];
+
+		m_Combo_Data.GetWindowText(cs);		short data = _ttoi(cs);
+
+		m_Combo_Stop.GetWindowText(cs);		short stop = _ttoi(cs);
+
+		if (m_Com.InitPort(this, comnum, baud, check, data, stop))
 		{                           //串口号，波特率，校验位，数据位，停止位为1(在此输入0，代表停止位为1)
 			//打开串口成功
 			m_Com.StartMonitoring();
 			m_COMStatu = TRUE;
+			m_txlen = 0;
 			GetDlgItem(IDC_BUTTON_OPENCOM)->SetWindowText(L"关闭串口");//说明已经打开了串口
 
 
@@ -663,10 +713,18 @@ void CULMDlgDlg::OnBnClickedButtonOpencom()
 			GetDlgItem(IDC_Data)->EnableWindow(FALSE);  //不许改
 			GetDlgItem(IDC_Stop)->EnableWindow(FALSE);  //不许改
 
+			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 串口打开成功！\r\n"),
+				stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
+			((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+			((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
 		}
 		else
 		{//串口打开失败           
-			MessageBox(L"没有发现此串口或被占用", L"串口打开失败", MB_ICONWARNING);
+			//MessageBox(L"没有发现此串口或被占用", L"串口打开失败", MB_ICONWARNING);
+			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 串口打开失败！\r\n"),
+				stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
+			((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+			((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
 		}
 	}
 
@@ -685,7 +743,6 @@ void CULMDlgDlg::OnCbnSelchangeComboCom()
 		int i = m_Combo_Com.GetCurSel();
 		OpenComm(i);
 	}
-	DisplayStatus();
 }
 
 //更改波特率
@@ -700,7 +757,7 @@ void CULMDlgDlg::OnCbnSelchangeComboBaud()
 		m_Combo_Baud.GetLBText(baudindex, m_Str_Baud);
 
 	}
-	DisplayStatus();
+	//DisplayStatus();
 }
 
 //更改校验位
@@ -713,7 +770,7 @@ void CULMDlgDlg::OnCbnSelchangeComboCheck()
 	{
 		SetCommParameter();
 		m_Combo_Check.GetLBText(checkindex, m_Str_Check);
-		DisplayStatus();
+		//DisplayStatus();
 	}
 }
 
@@ -728,7 +785,7 @@ void CULMDlgDlg::OnCbnSelchangeComboData()
 	{
 		SetCommParameter();
 		m_Combo_Data.GetLBText(dataindex, m_Str_Data);
-		DisplayStatus();
+		//DisplayStatus();
 	}
 }
 
@@ -742,40 +799,54 @@ void CULMDlgDlg::OnCbnSelchangeComboStop()
 	{
 		SetCommParameter();
 		m_Combo_Stop.GetLBText(stopindex, m_Str_Stop);
-		DisplayStatus();
+		//DisplayStatus();
 	}
 }
 
 LRESULT CULMDlgDlg::OnCommunication(WPARAM ch, LPARAM port)
 {//串口接收  处理函数
+	CString txlen_str;
+	m_rxlen++;
+	txlen_str.Format(L"接收：%ld", m_rxlen);
+	GetDlgItem(IDC_STATIC_TXLEN)->SetWindowText(txlen_str);
+
 	char c = (char)ch;
 	string str;
-	if (c == '$') gtStrIndex = 0;
+	if (c == '$')
+	{
+		gtStrIndex = 0;//重置
+		CString gts(GPSTimeStr);
+		((CWnd*)GetDlgItem(IDC_STATIC_GT))->SetWindowText(gts);
+	}
+
 	GPSTimeStr[gtStrIndex] = c;
 	gtStrIndex++;
-	if (c == '\n' && GPSTimeStr[4] == 'G' && GPSTimeStr[5]=='A') {//截取GPSTime这一行
-		str = GPSTimeStr;
-		short index = str.find(',');
-		str.erase(0, index + 1);
-		index = str.find(',');
-		str = str.substr(0, index);
-		if (!str.empty()) {
-			gt.hh = atoi(str.substr(0, 2).c_str());
-			gt.mm = atoi(str.substr(2, 2).c_str());
-			gt.ss = atof(str.substr(4, 5).c_str());
-			CString tri;
-			GetDlgItem(IDC_TriggerTime)->GetWindowText(tri);
-			int _trigger = _ttoi(tri);
+	//if (c == '\n' && GPSTimeStr[4] == 'G' && GPSTimeStr[5] == 'A') {//截取GPSTime这一行
+	//	str = GPSTimeStr;
+	//	short index = str.find(',');
+	//	str.erase(0, index + 1);
+	//	index = str.find(',');
+	//	str = str.substr(0, index);
+	//	if (!str.empty()) {
+	//		gt.hh = atoi(str.substr(0, 2).c_str());
+	//		gt.mm = atoi(str.substr(2, 2).c_str());
+	//		gt.ss = atof(str.substr(4, 5).c_str());
+	//		CString tri;
+	//		GetDlgItem(IDC_TriggerTime)->GetWindowText(tri);
+	//		int _trigger = _ttoi(tri);
 
-			GetDlgItem(IDC_TimeInterval)->GetWindowText(tri);
-			int _interval = _ttoi(tri);
-			if (int(gt.ss) == 0 && gt.mm % _interval == _trigger) OnBnClickedCollect();//开始采集数据
-			CString temp;
-			temp.Format(L"GPSTime: %02d时 %02d分 %04.2f秒", gt.hh, gt.mm, gt.ss);
-			((CWnd*)GetDlgItem(IDC_STATIC_GT))->SetWindowText(temp);
-			memset(GPSTimeStr, 0, 100);
-		}
-	}
+	//		GetDlgItem(IDC_TimeInterval)->GetWindowText(tri);
+	//		int _interval = _ttoi(tri);
+	//		if (int(gt.ss) == 0 && gt.mm % _interval == _trigger) {
+	//			cur_gt = gt;
+	//			OnBnClickedCollect();//开始采集数据
+	//		}
+	//		CString temp;
+	//		temp.Format(L"GPSTime: %02d时 %02d分 %04.2f秒", gt.hh, gt.mm, gt.ss);
+	//		((CWnd*)GetDlgItem(IDC_STATIC_GT))->SetWindowText(temp);
+	//		memset(GPSTimeStr, 0, 100);
+	//	}
+	//}
 
 	return 0;
 }
