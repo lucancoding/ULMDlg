@@ -13,12 +13,14 @@
 #include <string>
 #include "SerialCom.h"
 using namespace std;
-
+#define _CRT_SECURE_NO_WARNINGS
 #define MAXmemSize 10000
 struct GPSTime {
 	short hh;
 	short mm;
 	float ss;
+	string lon;
+	string lat;
 };
 // CULMDlgDlg 对话框
 class CULMDlgDlg : public CDialogEx
@@ -42,7 +44,8 @@ public:
 	BOOL			m_COMStatu;				//串口状态指示
 	long			m_rxlen;				//接收数据个数
 	long			m_txlen;				//发送数据个数
-	File* gpsfile;
+	long			m_msglineNum;			//接收数据行数
+	FILE* FileGPS;							//用于输出gps文件的文件流
 	
 	//字符变量
 	CString		m_Str_Com;					//字符变量：串口
@@ -75,8 +78,14 @@ public:
 	afx_msg LRESULT OnCommunication(WPARAM ch, LPARAM port);//串口接收处理函数
 
 private:
-	bool initDataBase();
-	bool outputToFile();
+	bool initDataBase();//初始化内存分配空间
+	bool outputDataToFile();//存储已采集到的数据
+	bool readData();//读取数据
+	bool dealGpsStr(string str, short len);
+	string data_from_hexstring(const char* hexstring, size_t length);
+	void data_from_hexstring(const char* hexstring, size_t length, void* output);
+	//2455544354696d65203d203134303635312e303030206c61746974756465203d20333930362e35383331344e206c6f6e676974756465203d2031313731302e31303230394500
+
 	int oppo;
 	bool ADCsetOk;
 	TCHAR keep[200];
@@ -85,10 +94,12 @@ private:
 	long memBlockLen;//存现有多少个数据块
 	DWORD* blockSizes;//存每个内存块中的数据长度
 	ADC_CONFIG adc;//ADC配置
-	char GPSTimeStr[100];//GPStime对应的一整行
+	char GPSInfoBuffer[200];//GPStime对应的一整行
+	string GpsStr;
 	short gtStrIndex;//gpstime字符串长度
 	GPSTime gt;//实时gps时间
 	GPSTime cur_gt;//本轮数据开始采集的时间
+
 
 	SYSTEMTIME stst;                                      //时间戳 
 // 实现
@@ -105,7 +116,6 @@ public:
 	afx_msg void OnBnClickedCollect();
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
 	afx_msg void OnBnClickedCon();
-	afx_msg void OnBnClickedOutput();
 	CComboBox m_Combo_Com;
 	CComboBox m_Combo_Baud;
 	CComboBox m_Combo_Check;

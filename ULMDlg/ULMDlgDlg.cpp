@@ -83,7 +83,6 @@ BEGIN_MESSAGE_MAP(CULMDlgDlg, CDialogEx)
 	ON_BN_CLICKED(ID_START, &CULMDlgDlg::OnBnClickedCollect)
 	ON_WM_TIMER()
 	ON_BN_CLICKED(ID_Con, &CULMDlgDlg::OnBnClickedCon)
-	ON_BN_CLICKED(IDC_Output, &CULMDlgDlg::OnBnClickedOutput)
 	ON_BN_CLICKED(IDC_BUTTON_OPENCOM, &CULMDlgDlg::OnBnClickedButtonOpencom)
 	ON_CBN_SELCHANGE(IDC_Com, &CULMDlgDlg::OnCbnSelchangeComboCom)
 	ON_CBN_SELCHANGE(IDC_Baud, &CULMDlgDlg::OnCbnSelchangeComboBaud)
@@ -150,7 +149,7 @@ BOOL CULMDlgDlg::OnInitDialog()
 	TCHAR baud[][7] = { L"300",L"600",L"1200",L"2400",L"4800",L"9600",L"19200",L"38400",L"43000",L"56000",L"57600",L"115200",L"128000",L"230400" };
 	for (int i = 0; i < 14; i++)
 		m_Combo_Baud.AddString(baud[i]);
-	m_Combo_Baud.SetCurSel(11);
+	m_Combo_Baud.SetCurSel(5);
 
 	//设校验位组合列表框
 	TCHAR check[][7] = { L"None",L"Odd",L"Even" };
@@ -183,9 +182,12 @@ BOOL CULMDlgDlg::OnInitDialog()
 	m_Combo_Range.SetCurSel(0);
 
 	GetDlgItem(IDC_TimeInterval)->SetWindowText(L"10");//设置时间间隔
-	GetDlgItem(IDC_Cycle)->SetWindowText(L"1000");//设置采样数
-	GetDlgItem(IDC_wPeriod)->SetWindowText(L"10");//设置采样间隔us
+	GetDlgItem(IDC_Cycle)->SetWindowText(L"3");//设置测量时长  计算采样数
+	GetDlgItem(IDC_wPeriod)->SetWindowText(L"100000");//设置频率  计算采样间隔us
 	GetDlgItem(IDC_TriggerTime)->SetWindowText(L"0");//设置求余后的触发时间
+	CButton* pBtn = (CButton*)(GetDlgItem(IDC_CHECK1));
+	pBtn->SetCheck(false);
+
 	ADCsetOk = false;
 	//打开串口函数赋初值
 	OpenComm(0);
@@ -257,138 +259,80 @@ void CULMDlgDlg::OnBnClickedCollect()
 		return;
 	}
 	if (!oppo) {
+		oppo = 1;//第一时间还原初始状态
 		initDataBase();//每一次开始收集，都初始化数据库
 		//4.FIFO操作
 		GetLocalTime(&stst);
 		if (ULM7606_InitFIFO(0)) {//FIFO初始化成功 
-
+			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] FIFO初始化 成功！\r\n"),
+				stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
+			((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+			((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
 		}
 		else
 		{//FIFO初始化失败 
-			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] FIFO初始化失败！\r\n"),
+			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] FIFO初始化 失败！\r\n"),
 				stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
 			((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
 			((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
 			return;
 		}
-		oppo = 1;
-		((CButton*)GetDlgItem(ID_START))->SetWindowText(TEXT("停止采集数据"));
 
 		GetLocalTime(&stst);
 		if (ULM7606_ADCStart(0)) {//ADC启动
-			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] ADC启动成功！\r\n"),
+			((CButton*)GetDlgItem(ID_START))->SetWindowText(TEXT("停止采集数据"));
+			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] ADC启动 成功！\r\n"),
 				stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
 			((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
 			((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
 			this->SetTimer(1, 500, NULL); //启动定时器，开始读数据
 		}
 		else {
-			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] ADC启动失败！\r\n"),
+			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] ADC启动 失败！\r\n"),
 				stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
 			((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
 			((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
 			return;
 		}
 	}
-	else {//已经开始采样，停止采样！ 
+	else {//已经开始采样，停止采样！
 		this->KillTimer(1);
 		Sleep(20);
+		oppo = 0;
 		((CButton*)GetDlgItem(ID_START))->SetWindowText(TEXT("开始采集数据"));
 		GetLocalTime(&stst);
 		if (ULM7606_ADCStop(0))
 		{
-			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 停止采集成功！\r\n"),
+			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 停止采集 成功！\r\n"),
 				stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
 		}
 		else
 		{
-			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 停止采集失败！\r\n"),
+			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 停止采集 失败！\r\n"),
 				stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
 		}
 		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
 		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
-		oppo = 0;
 	}
 }
 
-
+/// <summary>
+/// 对应timer的处理函数
+/// </summary>
+/// <param name="nIDEvent">timer的句柄</param>
 void CULMDlgDlg::OnTimer(UINT_PTR nIDEvent)
 {
 	// TODO: 在此添加消息处理程序代码和/或调用默认值
-	//循环读取FIFO的数据，关键！ 
-	DWORD suky, robi, monkey, numan, apple, ii, jj, juda; //suky保存FIFO未读数据长度 
-														  //robi本次实际读取的数据个数 
-														  //monkey需要新增的 “块”数 
-	CString strstr;//暂无引用
-
-	//字符ptr->内码short->所有变量ptzhang->切量程ptzhang2
-	BYTE* ptr;//存一个Timer内读到的全部字符数据
-	WORD* ptzhang, * ptchen, * silva;//short短整形 存没切量程的数值
-	float* ptzhang2, * silva2;//float浮点 存切了量程的数值
-	short vivo;//短整型临时变量
-	int log, fuji;
-
-	GetLocalTime(&stst);
-	if (!ULM7606_GetFIFOLeft(0, &suky))
+	switch (nIDEvent)
 	{
-		wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 获取FIFO剩余数据量失败！\r\n"),
-			stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
-		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
-		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
-		this->KillTimer(1);
-		goto ending;
-	}
-	if (!suky) goto ending;                              //本次没有读到数据则直接退出 
-	ptr = (BYTE*)malloc(suky * sizeof(BYTE));	         //分配采样值存储空间 	
-
-	if (!ULM7606_ReadFIFO(0, ptr, suky, &robi))
-	{
-		wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 读取FIFO失败！\r\n"),
-			stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
-		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
-		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
-		this->KillTimer(1);
-		free(ptr);
-		goto ending;
-	}
-
-	// 以下为读取成功后的数据存储！
-	GetLocalTime(&stst);
-	//如果够了 先立马杀死进程
-	//另一个判断是 如果读到数据个数不为0，那就保存拼接一下
-
-	if (ptr) {//往内存中存储一下这个timer内的数据
-		BYTE** newptr1 = (BYTE**)realloc(totalData, sizeof(BYTE*) * (memBlockLen + 1));
-		DWORD* newptr2 = (DWORD*)realloc(blockSizes, sizeof(DWORD) * (memBlockLen + 1));
-		if (!newptr1 || !newptr2) {
-			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 申请内存块失败！\r\n"),
-				stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
-			((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
-			((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
-			return;
-		}
-		memBlockLen += 1;
-
-		totalData = newptr1;
-		blockSizes = newptr2;
-		totalData[memBlockLen - 1] = ptr;
-		blockSizes[memBlockLen - 1] = robi;
-
-		realTotalBytes += robi;//加上此次采到的长度
-		wsprintf(keep, TEXT("共读取%d组数据 \r\n"), realTotalBytes / 16);
-		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
-		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
-	}
-
-	if (realTotalBytes == adc.dwCycles * 16) {//要存数据也就是在这存
-		this->KillTimer(1);
-		((CButton*)GetDlgItem(ID_START))->SetWindowText(TEXT("开始采集数据"));
-		wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] Timer停止，读取成功！\r\n"),
-			stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
-		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
-		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
-		oppo = 0;//归0
-		outputToFile();
+	case 1:
+		readData();// 计时器id是1，执行读数据操作
+		break;
+	case 2:
+		//outputGPS();// id是2，输出gps信息
+		break;
+	default:
+		break;
 	}
 
 ending:
@@ -397,13 +341,13 @@ ending:
 
 /// <summary>
 /// 配置ADC
+/// 仅仅完成了参数的配置，并没有进行数据采集
 /// </summary>
 void CULMDlgDlg::OnBnClickedCon()
 {
 	// TODO: 在此添加控件通知处理程序代码
 	ADCsetOk = false;
 	//1.扫抽USB.总线上的设备
-	WORD rr[16];
 	int num = USBScanDev(1);
 	wsprintf(keep, TEXT("device num = %d\r\n"), num);
 	((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
@@ -423,6 +367,7 @@ void CULMDlgDlg::OnBnClickedCon()
 	CString cyc;
 	GetDlgItem(IDC_Cycle)->GetWindowText(cyc);
 	unsigned long _trigger = _ttol(cyc);
+
 	int rid = m_Combo_Range.GetCurSel();
 	CString setrange;
 	m_Combo_Range.GetLBText(rid, setrange);
@@ -434,15 +379,13 @@ void CULMDlgDlg::OnBnClickedCon()
 		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
 		return;
 	}
-	//adc.byADCOptions = 0x00;
 	adc.byTrigOptions = 0x00;
-	adc.dwCycles = _trigger;
 
 	GetDlgItem(IDC_wPeriod)->GetWindowText(cyc);
 	unsigned int per = _ttoi(cyc);
 
-
-	adc.wPeriod = per;	//这个数要设置成有效采样周期(10uS ~ 5000uS )
+	adc.dwCycles = _trigger * per;
+	adc.wPeriod = 1000000 / per;	//这个数要设置成有效采样周期(10uS ~ 5000uS )
 	adc.wReserved = 0x00;
 	if (ULM7606_ADCSetConfig(0, &adc))
 		wsprintf(keep, TEXT("ADC配置成功！\r\n"));
@@ -450,7 +393,18 @@ void CULMDlgDlg::OnBnClickedCon()
 		wsprintf(keep, TEXT("ADC配置失败！\r\n"));
 		return;
 	}
-		
+
+	CButton* pBtn = (CButton*)(GetDlgItem(IDC_CHECK1));
+	bool autoGNSS = pBtn->GetCheck();
+	if (autoGNSS) {
+		GetDlgItem(ID_START)->EnableWindow(false);
+		GetDlgItem(IDC_Output)->EnableWindow(false);
+	}
+	else {
+		GetDlgItem(ID_START)->EnableWindow(true);
+		GetDlgItem(IDC_Output)->EnableWindow(true);
+	}
+
 	((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
 	((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
 	ADCsetOk = true;
@@ -484,14 +438,16 @@ bool CULMDlgDlg::initDataBase() {
 /// 输出到文件
 /// </summary>
 /// <returns>True为成功</returns>
-bool CULMDlgDlg::outputToFile() {
+bool CULMDlgDlg::outputDataToFile() {
 	GetLocalTime(&stst);
 	wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 正在保存文件...\r\n"),
 		stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
 	((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
 	((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+	
+	//能走到这一步  说明时间匹配上了，并且cur_gt肯定有值
 	char buffer[200] = { 0 };
-	snprintf(buffer, 200, "./%02d-%02d.txt", cur_gt.hh, cur_gt.mm);
+	snprintf(buffer, 200, "./GpsTime_%02d-%02d-%02d.dat", cur_gt.hh, cur_gt.mm, int(cur_gt.ss));
 	FILE* f;
 	fopen_s(&f, buffer, "w+");
 	if (f == NULL) {
@@ -501,6 +457,10 @@ bool CULMDlgDlg::outputToFile() {
 		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
 		return false;
 	}
+	const char* c_s = GpsStr.c_str();
+	fputs(c_s, f);
+	fputs("\n", f);
+
 	short vivo;
 	for (auto i = 0; i < memBlockLen; i++) {
 		BYTE* ptr = totalData[i];
@@ -525,26 +485,224 @@ bool CULMDlgDlg::outputToFile() {
 				temp[ii] = vivo * lc / 32767;
 			}
 			memset(buffer, 0, 200);
-			snprintf(buffer, 200, " %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f\r\n", temp[0] \
+			snprintf(buffer, 200, " %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f\n", temp[0] \
 				, temp[1], temp[2], temp[3], temp[4], temp[5], temp[6], temp[7]);
 			fputs(buffer, f);
 			free(temp);
 		}
+		ptr = nullptr;
+		temp = nullptr;
 		fflush(f);
 	}
 	fclose(f);
-	wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 文件已输出到%02d-%02d-%02d.txt\r\n"),
-		stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond, stst.wHour, stst.wMinute, stst.wSecond);
+	GetLocalTime(&stst);
+	wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 文件已输出到 GpsTime_%02d-%02d-%02d.dat\r\n"),
+		stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond, cur_gt.hh, cur_gt.mm, int(cur_gt.ss));
 	((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
 	((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+	initDataBase();
 	return true;
 }
 
-void CULMDlgDlg::OnBnClickedOutput()
+bool CULMDlgDlg::readData()
 {
-	// TODO: 在此添加控件通知处理程序代码
-	outputToFile();
+	DWORD suky, robi, monkey, numan, apple, ii, jj, juda; //suky 保存FIFO未读数据长度 
+														  //robi 本次实际读取的数据个数 
+														  //monkey 需要新增的 “块”数 
+	CString strstr;//暂无引用
+
+	//字符ptr->内码short->所有变量ptzhang->切量程ptzhang2
+	BYTE* ptr;//存一个Timer内读到的全部字符数据
+	WORD* ptzhang, * ptchen, * silva;//short短整形 存没切量程的数值
+	float* ptzhang2, * silva2;//float浮点 存切了量程的数值
+	short vivo;//短整型临时变量
+	int log, fuji;
+
+	GetLocalTime(&stst);
+	if (!ULM7606_GetFIFOLeft(0, &suky))
+	{
+		wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 获取FIFO剩余数据量失败！\r\n"),
+			stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
+		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+		this->KillTimer(1);
+		return false;
+	}
+	if (!suky) return false;                              //本次没有读到数据则直接退出 
+	ptr = (BYTE*)malloc(suky * sizeof(BYTE));	         //分配采样值存储空间 	
+
+	if (!ULM7606_ReadFIFO(0, ptr, suky, &robi))
+	{
+		wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 读取FIFO失败！\r\n"),
+			stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
+		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+		this->KillTimer(1);
+		free(ptr);
+		ptr = nullptr;
+		return false;
+	}
+
+	// 以下为读取成功后的数据存储！
+	GetLocalTime(&stst);
+	//如果够了 先立马杀死进程
+	//另一个判断是 如果读到数据个数不为0，那就保存拼接一下
+
+	if (ptr) {//往内存中存储一下这个timer内的数据
+		BYTE** newptr1 = (BYTE**)realloc(totalData, sizeof(BYTE*) * (memBlockLen + 1));
+		DWORD* newptr2 = (DWORD*)realloc(blockSizes, sizeof(DWORD) * (memBlockLen + 1));
+		if (!newptr1 || !newptr2) {
+			wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 申请内存块失败！\r\n"),
+				stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
+			((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+			((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+			return false;
+		}
+		memBlockLen += 1;
+
+		totalData = newptr1;
+		blockSizes = newptr2;
+		totalData[memBlockLen - 1] = ptr;
+		blockSizes[memBlockLen - 1] = robi;
+
+		realTotalBytes += robi;//加上此次采到的长度
+		wsprintf(keep, TEXT("共读取%d组数据 \r\n"), realTotalBytes / 16);
+		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+	}
+
+	// 采集完毕所有数据
+	if (realTotalBytes == adc.dwCycles * 16) {//存数据
+		this->KillTimer(1);
+		((CButton*)GetDlgItem(ID_START))->SetWindowText(TEXT("开始采集数据"));
+		wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] Timer停止，读取成功！\r\n"),
+			stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
+		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
+		oppo = 0;//归0
+		outputDataToFile();
+	}
+	return true;
 }
+
+bool CULMDlgDlg::dealGpsStr(string str, short len)
+{
+	//str = "$UTCTime = 085944.000 GPS DATA is not usefull!\r\n";
+	//short len1 = str.length();
+
+
+	char t[15] = { }, lat[15] = { }, lon[15] = { };
+	if (len >= 69)//包含全部信息
+	{
+		gt.hh = atoi(str.substr(11, 2).c_str());
+		gt.mm = atoi(str.substr(13, 2).c_str());
+		gt.ss = atoi(str.substr(15, 2).c_str());
+		gt.lat = str.substr(33, 10);
+		gt.lon = str.substr(64, 11);
+	}
+	else if (len <69 && len > 48)//仅带有Time
+	{
+		gt.hh = atoi(str.substr(11, 2).c_str());
+		gt.mm = atoi(str.substr(13, 2).c_str());
+		gt.ss = atoi(str.substr(15, 2).c_str());
+		gt.lat = "";
+		gt.lon = "";
+	}
+	else if (len <= 40)//什么信息都没有
+	{
+		gt.hh = -1;
+		gt.mm = -1;
+		gt.ss = -1;
+		gt.lat = "";
+		gt.lon = "";
+		return false;
+	}
+	return true;
+}
+
+void CULMDlgDlg::data_from_hexstring(const char* hexstring, size_t length, void* output) {
+	unsigned char* buf = (unsigned char*)output;
+	unsigned char byte;
+	for (size_t i = 0; i < length; ++i) {
+		switch (hexstring[i]) {
+		case 'a':
+		case 'b':
+		case 'c':
+		case 'd':
+		case 'e':
+		case 'f':
+			byte = (hexstring[i] - 'a' + 10) << 4;
+			break;
+		case 'A':
+		case 'B':
+		case 'C':
+		case 'D':
+		case 'E':
+		case 'F':
+			byte = (hexstring[i] - 'A' + 10) << 4;
+			break;
+		case '0':
+		case '1':
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		case '6':
+		case '7':
+		case '8':
+		case '9':
+			byte = (hexstring[i] - '0') << 4;
+			break;
+		default:
+			;
+		}
+		++i;
+		switch (hexstring[i]) {
+		case 'a':
+		case 'b':
+		case 'c':
+		case 'd':
+		case 'e':
+		case 'f':
+			byte |= hexstring[i] - 'a' + 10;
+			break;
+		case 'A':
+		case 'B':
+		case 'C':
+		case 'D':
+		case 'E':
+		case 'F':
+			byte |= hexstring[i] - 'A' + 10;
+			break;
+		case '0':
+		case '1':
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		case '6':
+		case '7':
+		case '8':
+		case '9':
+			byte |= hexstring[i] - '0';
+			break;
+		default:
+			;
+		}
+		*buf++ = byte;
+	}
+}
+
+string CULMDlgDlg::data_from_hexstring(const char* hexstring, size_t length) {
+	if (length == 0) {
+		return std::string();
+	}
+	std::string result;
+	result.resize(length / 2);
+	data_from_hexstring(hexstring, length, &result[0]);
+	return result;
+}
+
 
 BOOL CULMDlgDlg::OpenComm(int Num)
 {
@@ -661,7 +819,6 @@ BOOL CULMDlgDlg::SetCommParameter()
 void CULMDlgDlg::OnBnClickedButtonOpencom()
 {
 	//TODO: 在此添加控件通知处理程序代码
-
 	m_Combo_Com.GetLBText(m_Combo_Com.GetCurSel(), m_Str_Com); //获取串口号
 	m_Combo_Baud.GetLBText(m_Combo_Baud.GetCurSel(), m_Str_Baud);    //获取波特率
 	m_Combo_Check.GetLBText(m_Combo_Check.GetCurSel(), m_Str_Check);//获取校验位
@@ -681,7 +838,12 @@ void CULMDlgDlg::OnBnClickedButtonOpencom()
 		GetDlgItem(IDC_Check)->EnableWindow(TRUE);//允许改
 		GetDlgItem(IDC_Data)->EnableWindow(TRUE);  //允许改
 		GetDlgItem(IDC_Stop)->EnableWindow(TRUE);  //允许改
+		wsprintf(keep, TEXT("[%4d/%02d/%02d %02d:%02d:%02d] 串口关闭成功！\r\n"),
+			stst.wYear, stst.wMonth, stst.wDay, stst.wHour, stst.wMinute, stst.wSecond);
+		((CEdit*)GetDlgItem(IDC_LOG))->SetSel(-1, -1);
+		((CEdit*)GetDlgItem(IDC_LOG))->ReplaceSel(keep);
 
+		fclose(this->FileGPS);
 	}
 	else//串口已经关闭
 	{
@@ -700,9 +862,17 @@ void CULMDlgDlg::OnBnClickedButtonOpencom()
 		if (m_Com.InitPort(this, comnum, baud, check, data, stop))
 		{                           //串口号，波特率，校验位，数据位，停止位为1(在此输入0，代表停止位为1)
 			//打开串口成功
+			GetLocalTime(&stst);
+			char buffer[35] = { 0 };
+			snprintf(buffer, 35, "./LocalTime_%02d-%02d-%02d.gps", stst.wHour, stst.wMinute, stst.wSecond);
+
+			fopen_s(&FileGPS, buffer, "a+");
+
 			m_Com.StartMonitoring();
 			m_COMStatu = TRUE;
-			m_txlen = 0;
+			m_rxlen = 0;
+			m_msglineNum = 0;
+			gtStrIndex = 0;
 			GetDlgItem(IDC_BUTTON_OPENCOM)->SetWindowText(L"关闭串口");//说明已经打开了串口
 
 
@@ -811,16 +981,52 @@ LRESULT CULMDlgDlg::OnCommunication(WPARAM ch, LPARAM port)
 	GetDlgItem(IDC_STATIC_TXLEN)->SetWindowText(txlen_str);
 
 	char c = (char)ch;
-	string str;
-	if (c == '$')
+	GPSInfoBuffer[gtStrIndex] = c;
+	gtStrIndex++;
+
+	if (c == '\n')
 	{
+		m_msglineNum++;
+		char p_linenum[10];
+		sprintf_s(p_linenum, 10, "%ld", m_msglineNum);
+		string linenum(p_linenum);
+
+		//char st[] = "2455544354696d65203d203134303635312e303030206c61746974756465203d20333930362e35383331344e206c6f6e676974756465203d2031313731302e313032303945000";
+		//string gts = data_from_hexstring((const char*)st, 141);
+		GpsStr = data_from_hexstring((const char*)GPSInfoBuffer, gtStrIndex - 2);//减去尾部的\r\n
+
+		const char* c_s = GpsStr.c_str();
+		fputs(c_s, FileGPS);
+		fputs("\n", FileGPS);
+		fflush(FileGPS);
+
+		string wd_strtemp = linenum + ": " + GpsStr;
+
+		CString wd_str;
+		wd_str = wd_strtemp.c_str();
+		((CWnd*)GetDlgItem(IDC_STATIC_GT))->SetWindowText(wd_str);
+		//do: 处理gps字符串
+		dealGpsStr(GpsStr, gtStrIndex / 2);
+
 		gtStrIndex = 0;//重置
-		CString gts(GPSTimeStr);
-		((CWnd*)GetDlgItem(IDC_STATIC_GT))->SetWindowText(gts);
+		memset(GPSInfoBuffer, 0, 200);
+
+		CButton* pBtn = (CButton*)(GetDlgItem(IDC_CHECK1));
+		bool autoGNSS = pBtn->GetCheck();
+		if (autoGNSS) {//如果要自动采集，就匹配一下配置好的时间
+			CString tri;
+			GetDlgItem(IDC_TriggerTime)->GetWindowText(tri);
+			int _trigger = _ttoi(tri);//获取时间触发刻
+
+			GetDlgItem(IDC_TimeInterval)->GetWindowText(tri);
+			int _interval = _ttoi(tri);//获取时间间隔
+			if (int(gt.ss) == 0 && gt.mm % _interval == _trigger) {
+				cur_gt = gt;
+				OnBnClickedCollect();//开始采集数据
+			}
+		}
 	}
 
-	GPSTimeStr[gtStrIndex] = c;
-	gtStrIndex++;
 	//if (c == '\n' && GPSTimeStr[4] == 'G' && GPSTimeStr[5] == 'A') {//截取GPSTime这一行
 	//	str = GPSTimeStr;
 	//	short index = str.find(',');
@@ -840,6 +1046,7 @@ LRESULT CULMDlgDlg::OnCommunication(WPARAM ch, LPARAM port)
 	//		if (int(gt.ss) == 0 && gt.mm % _interval == _trigger) {
 	//			cur_gt = gt;
 	//			OnBnClickedCollect();//开始采集数据
+	//          记得按下后锁死手动按键  不让再按了
 	//		}
 	//		CString temp;
 	//		temp.Format(L"GPSTime: %02d时 %02d分 %04.2f秒", gt.hh, gt.mm, gt.ss);
